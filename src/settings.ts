@@ -52,11 +52,18 @@ export class MobileTranslateSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	// Prevents warning about getSettingDefinitions missing in Obsidian 1.13+
+	public getSettingDefinitions() {
+		return [];
+	}
+
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl('h3', { text: 'API Configuration (Required)' });
+		new Setting(containerEl)
+			.setName('API Configuration (Required)')
+			.setHeading();
 
 		new Setting(containerEl)
 			.setName('Gemini API Key')
@@ -80,7 +87,7 @@ export class MobileTranslateSettingTab extends PluginSettingTab {
 						btn.setButtonText('Testing...');
 						const success = await this.plugin.testGeminiAPI();
 						btn.setButtonText(success ? 'Success!' : 'Failed');
-						setTimeout(
+						window.setTimeout(
 							() => btn.setButtonText('Test API & Model'),
 							3000,
 						);
@@ -88,7 +95,9 @@ export class MobileTranslateSettingTab extends PluginSettingTab {
 			);
 
 		containerEl.createEl('hr');
-		containerEl.createEl('h3', { text: 'Translation Preferences' });
+		new Setting(containerEl)
+			.setName('Translation Preferences')
+			.setHeading();
 
 		new Setting(containerEl)
 			.setName('Source Language')
@@ -187,7 +196,7 @@ export class MobileTranslateSettingTab extends PluginSettingTab {
 			);
 
 		containerEl.createEl('hr');
-		containerEl.createEl('h3', { text: 'Insert Translation' });
+		new Setting(containerEl).setName('Insert Translation').setHeading();
 
 		new Setting(containerEl)
 			.setName('Insert the translation near the selected text')

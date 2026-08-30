@@ -1,4 +1,4 @@
-# Mobile Translation for Obsidian
+# Mobile-Translate
 
 Tap or Select the desired word to get it's translation from Google Translate. Works for Desktop too.
 

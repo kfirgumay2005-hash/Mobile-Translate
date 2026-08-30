@@ -11,6 +11,41 @@ interface TranslationResult {
 	alternatives: string | null;
 }
 
+interface GeminiPart {
+	text: string;
+}
+
+interface GeminiContent {
+	parts: GeminiPart[];
+}
+
+interface GeminiCandidate {
+	content: GeminiContent;
+}
+
+interface GeminiResponse {
+	candidates?: GeminiCandidate[];
+}
+
+interface GeminiModel {
+	name: string;
+	supportedGenerationMethods?: string[];
+}
+
+interface GeminiModelsResponse {
+	models?: GeminiModel[];
+}
+
+interface ParsedTranslation {
+	main?: string;
+	alternatives?: string[];
+}
+
+interface RequestError {
+	status?: number;
+	message?: string;
+}
+
 export default class MobileTranslatePlugin extends Plugin {
 	settings!: MobileTranslateSettings;
 	cachedAutoModel: string | null = null;
@@ -48,7 +83,7 @@ export default class MobileTranslatePlugin extends Plugin {
 				new Notice('Translating...');
 
 				try {
-					let translation = await this.fetchTranslation(selection);
+					const translation = await this.fetchTranslation(selection);
 
 					if (translation) {
 						if (this.settings.removePunctuation) {
@@ -80,8 +115,8 @@ export default class MobileTranslatePlugin extends Plugin {
 						}
 
 						if (shouldGenerate) {
-							this.fetchGeminiSentence(selection).then(
-								(sentence) => {
+							void this.fetchGeminiSentence(selection)
+								.then((sentence) => {
 									if (sentence) {
 										if (this.settings.insertIntoEditor) {
 											this.replaceTextInEditor(
@@ -107,18 +142,34 @@ export default class MobileTranslatePlugin extends Plugin {
 											);
 										}
 									}
-								},
-							);
+								})
+								.catch((err: unknown) => {
+									console.error(
+										'[Mobile Translate] Sentence Error:',
+										err,
+									);
+									if (this.settings.insertIntoEditor) {
+										this.replaceTextInEditor(
+											editor,
+											uniquePlaceholder,
+											'❌ Failed to generate sentence.',
+										);
+									}
+								});
 						}
 					} else {
 						new Notice('No translation found.');
 					}
-				} catch (error: any) {
+				} catch (error: unknown) {
 					console.error(
 						'[Mobile Translate] Detailed Translation error:',
 						error,
 					);
-					new Notice('Error connecting: ' + (error.message || error));
+					const msg =
+						error instanceof Error
+							? error.message
+							: (error as RequestError).message || String(error);
+					new Notice('Error connecting: ' + msg);
 				}
 			},
 		});
@@ -150,21 +201,33 @@ export default class MobileTranslatePlugin extends Plugin {
 					'⏳ Generating sentence for "' + selection + '"...';
 				editor.replaceSelection(selection + '\n> ' + uniquePlaceholder);
 
-				this.fetchGeminiSentence(selection).then((sentence) => {
-					if (sentence) {
-						this.replaceTextInEditor(
-							editor,
-							uniquePlaceholder,
-							sentence,
+				void this.fetchGeminiSentence(selection)
+					.then((sentence) => {
+						if (sentence) {
+							this.replaceTextInEditor(
+								editor,
+								uniquePlaceholder,
+								sentence,
+							);
+						} else {
+							this.replaceTextInEditor(
+								editor,
+								uniquePlaceholder,
+								'❌ Failed to generate.',
+							);
+						}
+					})
+					.catch((err: unknown) => {
+						console.error(
+							'[Mobile Translate] Generate Error:',
+							err,
 						);
-					} else {
 						this.replaceTextInEditor(
 							editor,
 							uniquePlaceholder,
 							'❌ Failed to generate.',
 						);
-					}
-				});
+					});
 			},
 		});
 	}
@@ -236,16 +299,19 @@ export default class MobileTranslatePlugin extends Plugin {
 				}),
 			});
 
-			if (response.json?.candidates?.[0]?.content?.parts?.[0]?.text) {
-				let rawText =
-					response.json.candidates[0].content.parts[0].text.trim();
+			const data = response.json as GeminiResponse;
+			const responseText =
+				data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+			if (responseText) {
+				let rawText = responseText.trim();
 				rawText = rawText
 					.replace(/^```json/i, '')
 					.replace(/^```/i, '')
 					.replace(/```$/i, '')
 					.trim();
 
-				const parsedData = JSON.parse(rawText);
+				const parsedData = JSON.parse(rawText) as ParsedTranslation;
 				let alternativesText: string | null = null;
 
 				if (
@@ -261,9 +327,13 @@ export default class MobileTranslatePlugin extends Plugin {
 					alternatives: alternativesText,
 				};
 			}
-		} catch (err: any) {
+		} catch (err: unknown) {
 			console.error('[Mobile Translate] Translation Error:', err);
-			new Notice('Translation Failed: ' + (err.message || err.status));
+			const errMsg =
+				err instanceof Error
+					? err.message
+					: (err as RequestError).status || String(err);
+			new Notice('Translation Failed: ' + errMsg);
 		}
 
 		return null;
@@ -275,7 +345,7 @@ export default class MobileTranslatePlugin extends Plugin {
 		const apiKey = this.getCleanApiKey();
 		if (!apiKey) return 'gemini-2.0-flash';
 
-		const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+		const url = `[https://generativelanguage.googleapis.com/v1beta/models?key=$](https://generativelanguage.googleapis.com/v1beta/models?key=$){apiKey}`;
 
 		try {
 			const response = await requestUrl({
@@ -284,14 +354,16 @@ export default class MobileTranslatePlugin extends Plugin {
 				headers: { 'x-goog-api-key': apiKey },
 			});
 
-			if (response.json && response.json.models) {
-				const validModels = response.json.models
-					.filter((m: any) =>
+			const data = response.json as GeminiModelsResponse;
+
+			if (data?.models) {
+				const validModels = data.models
+					.filter((m) =>
 						m.supportedGenerationMethods?.includes(
 							'generateContent',
 						),
 					)
-					.map((m: any) => m.name.replace('models/', ''));
+					.map((m) => m.name.replace('models/', ''));
 
 				const selectedModel =
 					validModels.find((name: string) =>
@@ -304,23 +376,16 @@ export default class MobileTranslatePlugin extends Plugin {
 
 				if (selectedModel) {
 					this.cachedAutoModel = selectedModel;
-					console.log(
-						'[Mobile Translate] Auto-detected model: ' +
-							selectedModel,
-					);
 					return selectedModel;
 				}
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error(
 				'[Mobile Translate] Failed to auto-detect model:',
 				error,
 			);
 		}
 
-		console.log(
-			'[Mobile Translate] Falling back to default model: gemini-2.0-flash',
-		);
 		return 'gemini-2.0-flash';
 	}
 
@@ -329,7 +394,7 @@ export default class MobileTranslatePlugin extends Plugin {
 		if (!apiKey) return null;
 
 		const model = await this.getResolvedModel();
-		const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+		const url = `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){model}:generateContent?key=${apiKey}`;
 		try {
 			const response = await requestUrl({
 				url: url,
@@ -352,10 +417,13 @@ export default class MobileTranslatePlugin extends Plugin {
 				}),
 			});
 
-			if (response.json?.candidates?.[0]?.content?.parts?.[0]?.text) {
-				return response.json.candidates[0].content.parts[0].text.trim();
+			const data = response.json as GeminiResponse;
+			const textPart = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+			if (textPart) {
+				return textPart.trim();
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error('[Mobile Translate] Gemini Sentence Error:', error);
 		}
 		return null;
@@ -372,7 +440,7 @@ export default class MobileTranslatePlugin extends Plugin {
 
 		try {
 			const model = await this.getResolvedModel();
-			const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+			const url = `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){model}:generateContent?key=${apiKey}`;
 
 			const response = await requestUrl({
 				url: url,
@@ -390,22 +458,23 @@ export default class MobileTranslatePlugin extends Plugin {
 				);
 				return true;
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error(
 				'[Mobile Translate] API Test Failed Detailed Error:',
 				error,
 			);
 
-			const status = error.status ? ' [HTTP ' + error.status + ']' : '';
-			const msg = error.message || 'Network error / invalid response';
+			const reqErr = error as RequestError;
+			const status = reqErr.status ? ' [HTTP ' + reqErr.status + ']' : '';
+			const msg = reqErr.message || 'Network error / invalid response';
 
-			if (error.status === 400 || error.status === 403) {
+			if (reqErr.status === 400 || reqErr.status === 403) {
 				new Notice(
 					'API Error' +
 						status +
 						': Invalid API Key or API not enabled in Google Cloud Studio.',
 				);
-			} else if (error.status === 404) {
+			} else if (reqErr.status === 404) {
 				new Notice('API Error' + status + ': Model not found.');
 			} else {
 				new Notice('API Test Failed' + status + ': ' + msg);
