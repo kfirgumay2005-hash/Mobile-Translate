@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "Mobile-Translate",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "Tap the word for Translation , Uses Google Translate",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
@@ -14,7 +14,7 @@
 	"license": "0-BSD",
 	"devDependencies": {
 		"@eslint/js": "^9.39.4",
-		"@types/node": "^22.15.17",
+		"@types/node": "^22.20.1",
 		"esbuild": "0.25.5",
 		"eslint": "^9.39.4",
 		"eslint-plugin-obsidianmd": "^0.4.0",

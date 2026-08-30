@@ -1,11 +1,10 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "Mobile-Translate",
+	"name": "Mobile-Translate",
 	"version": "1.0.0",
 	"minAppVersion": "1.0.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"description": "Tap or Select the word for Translation , Works on Desktop too, Uses Google Translate (No need for an API)",
+	"author": "KfirG",
+	"authorUrl": "https://github.com/kfirgumay2005-hash",
 	"isDesktopOnly": false
 }
