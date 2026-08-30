@@ -1,7 +1,7 @@
 {
 	"id": "MobileTranslate",
 	"name": "Mobile-Translate",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"minAppVersion": "1.0.0",
 	"description": "Select the text and click button for Translation , Uses Gemini API",
 	"author": "KfirG",
