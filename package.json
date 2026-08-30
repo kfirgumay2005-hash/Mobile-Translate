@@ -1,7 +1,7 @@
 {
 	"name": "Mobile-Translate",
-	"version": "1.0.0",
-	"description": "Tap the word for Translation , Uses Google Translate",
+	"version": "1.0.1",
+	"description": "Select the text and click button for Translation , Uses Gemini API",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {

@@ -5,8 +5,9 @@ Tap or Select the desired word to get it's translation from Google Translate. Wo
 ## Installation and Setup:
 
 1. Install and enable the plugin from Obsidian Community Plugins.
-2. If you wish to generate context sentence:
-   go to https://aistudio.google.com/api-keys and create a gemini API key.
+2. Grab your Gemini API key at https://aistudio.google.com/api-keys
+3. Add translate button on your phone: Navigate to Settings > Interface > Configure mobile toolbar > Add a command
+4. Add Mobile-Translate: Translate Word
 
 ## Mobile Translate: Feature Guide
 

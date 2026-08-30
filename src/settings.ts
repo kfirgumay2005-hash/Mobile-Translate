@@ -56,6 +56,40 @@ export class MobileTranslateSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
+		containerEl.createEl('h3', { text: 'API Configuration (Required)' });
+
+		new Setting(containerEl)
+			.setName('Gemini API Key')
+			.setDesc(
+				'Mandatory for translations and generating sentences. The plugin automatically detects and uses the latest, fastest Flash-Lite model.',
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder('AQ.Ab8...')
+					.setValue(this.plugin.settings.geminiApiKey)
+					.onChange(async (value) => {
+						this.plugin.settings.geminiApiKey = value;
+						await this.plugin.saveSettings();
+					}),
+			)
+			.addButton((btn) =>
+				btn
+					.setButtonText('Test API & Model')
+					.setCta()
+					.onClick(async () => {
+						btn.setButtonText('Testing...');
+						const success = await this.plugin.testGeminiAPI();
+						btn.setButtonText(success ? 'Success!' : 'Failed');
+						setTimeout(
+							() => btn.setButtonText('Test API & Model'),
+							3000,
+						);
+					}),
+			);
+
+		containerEl.createEl('hr');
+		containerEl.createEl('h3', { text: 'Translation Preferences' });
+
 		new Setting(containerEl)
 			.setName('Source Language')
 			.setDesc('Select the original language')
@@ -134,13 +168,12 @@ export class MobileTranslateSettingTab extends PluginSettingTab {
 		}
 
 		new Setting(containerEl)
-			.setName('Generate Context Sentence (Gemini AI)')
+			.setName('Generate Context Sentence')
 			.setDesc(
 				'Generate an example sentence in the language of the selected word.',
 			)
 			.addDropdown((drop) =>
 				drop
-					.addOption('off', 'Disabled')
 					.addOption('auto', 'Automatic (During Translation)')
 					.addOption('manual', 'Manual (Via Command Only)')
 					.setValue(this.plugin.settings.sentenceMode)
@@ -150,43 +183,14 @@ export class MobileTranslateSettingTab extends PluginSettingTab {
 							| 'auto'
 							| 'manual';
 						await this.plugin.saveSettings();
-						this.display();
 					}),
 			);
 
-		if (this.plugin.settings.sentenceMode !== 'off') {
-			new Setting(containerEl)
-				.setName('Gemini API Key')
-				.setDesc(
-					'Required for generating sentences. The plugin automatically detects and uses the latest, fastest Flash-Lite model available on your account.',
-				)
-				.addText((text) =>
-					text
-						.setPlaceholder('AIzaSy...')
-						.setValue(this.plugin.settings.geminiApiKey)
-						.onChange(async (value) => {
-							this.plugin.settings.geminiApiKey = value;
-							await this.plugin.saveSettings();
-						}),
-				)
-				.addButton((btn) =>
-					btn
-						.setButtonText('Test API')
-						.setCta()
-						.onClick(async () => {
-							btn.setButtonText('Testing...');
-							const success = await this.plugin.testGeminiAPI();
-							btn.setButtonText(success ? 'Success!' : 'Failed');
-							setTimeout(
-								() => btn.setButtonText('Test API'),
-								3000,
-							);
-						}),
-				);
-		}
+		containerEl.createEl('hr');
+		containerEl.createEl('h3', { text: 'Insert Translation' });
 
 		new Setting(containerEl)
-			.setName('Insert Translation into Editor')
+			.setName('Insert the translation near the selected text')
 			.setDesc(
 				'If disabled, the translation will only appear as a popup Notice.',
 			)
