@@ -1,4 +1,4 @@
-import { Plugin, Editor, MarkdownView, Notice, requestUrl } from 'obsidian';
+import { Plugin, Editor, MarkdownView, Notice } from 'obsidian';
 import {
 	MobileTranslateSettings,
 	DEFAULT_SETTINGS,
@@ -39,11 +39,6 @@ interface GeminiModelsResponse {
 interface ParsedTranslation {
 	main?: string;
 	alternatives?: string[];
-}
-
-interface RequestError {
-	status?: number;
-	message?: string;
 }
 
 export default class MobileTranslatePlugin extends Plugin {
@@ -166,9 +161,7 @@ export default class MobileTranslatePlugin extends Plugin {
 						error,
 					);
 					const msg =
-						error instanceof Error
-							? error.message
-							: (error as RequestError).message || String(error);
+						error instanceof Error ? error.message : String(error);
 					new Notice('Error connecting: ' + msg);
 				}
 			},
@@ -289,31 +282,33 @@ export default class MobileTranslatePlugin extends Plugin {
 			' distinct alternative translation strings in the array. If none or max is 0, leave empty.';
 
 		try {
-			const response = await requestUrl({
-				url: url,
+			const response = await fetch(url, {
 				method: 'POST',
-				contentType: 'application/json',
-				headers: { 'x-goog-api-key': apiKey },
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					contents: [{ parts: [{ text: promptText }] }],
 				}),
 			});
 
-			const data = response.json as GeminiResponse;
+			if (!response.ok) {
+				throw new Error(`HTTP ${response.status}`);
+			}
+
+			const data = (await response.json()) as GeminiResponse;
 			const responseText =
 				data.candidates?.[0]?.content?.parts?.[0]?.text;
 
 			if (responseText) {
-				let rawText = responseText.trim();
-				rawText = rawText
+				let rawText = responseText
+					.trim()
 					.replace(/^```json/i, '')
 					.replace(/^```/i, '')
 					.replace(/```$/i, '')
 					.trim();
 
 				const parsedData = JSON.parse(rawText) as ParsedTranslation;
-				let alternativesText: string | null = null;
 
+				let alternativesText: string | null = null;
 				if (
 					this.settings.showAlternatives &&
 					Array.isArray(parsedData.alternatives) &&
@@ -329,10 +324,7 @@ export default class MobileTranslatePlugin extends Plugin {
 			}
 		} catch (err: unknown) {
 			console.error('[Mobile Translate] Translation Error:', err);
-			const errMsg =
-				err instanceof Error
-					? err.message
-					: (err as RequestError).status || String(err);
+			const errMsg = err instanceof Error ? err.message : String(err);
 			new Notice('Translation Failed: ' + errMsg);
 		}
 
@@ -345,16 +337,12 @@ export default class MobileTranslatePlugin extends Plugin {
 		const apiKey = this.getCleanApiKey();
 		if (!apiKey) return 'gemini-2.0-flash';
 
-		const url = `[https://generativelanguage.googleapis.com/v1beta/models?key=$](https://generativelanguage.googleapis.com/v1beta/models?key=$){apiKey}`;
-
+		const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
 		try {
-			const response = await requestUrl({
-				url: url,
-				method: 'GET',
-				headers: { 'x-goog-api-key': apiKey },
-			});
+			const response = await fetch(url, { method: 'GET' });
+			if (!response.ok) return 'gemini-2.0-flash';
 
-			const data = response.json as GeminiModelsResponse;
+			const data = (await response.json()) as GeminiModelsResponse;
 
 			if (data?.models) {
 				const validModels = data.models
@@ -394,13 +382,11 @@ export default class MobileTranslatePlugin extends Plugin {
 		if (!apiKey) return null;
 
 		const model = await this.getResolvedModel();
-		const url = `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){model}:generateContent?key=${apiKey}`;
+		const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 		try {
-			const response = await requestUrl({
-				url: url,
+			const response = await fetch(url, {
 				method: 'POST',
-				contentType: 'application/json',
-				headers: { 'x-goog-api-key': apiKey },
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					contents: [
 						{
@@ -417,7 +403,9 @@ export default class MobileTranslatePlugin extends Plugin {
 				}),
 			});
 
-			const data = response.json as GeminiResponse;
+			if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+			const data = (await response.json()) as GeminiResponse;
 			const textPart = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
 			if (textPart) {
@@ -440,45 +428,43 @@ export default class MobileTranslatePlugin extends Plugin {
 
 		try {
 			const model = await this.getResolvedModel();
-			const url = `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){model}:generateContent?key=${apiKey}`;
-
-			const response = await requestUrl({
-				url: url,
+			const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+			const response = await fetch(url, {
 				method: 'POST',
-				contentType: 'application/json',
-				headers: { 'x-goog-api-key': apiKey },
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					contents: [{ parts: [{ text: "Respond with 'OK'" }] }],
 				}),
 			});
 
-			if (response.status === 200) {
+			if (response.ok) {
 				new Notice(
 					'API Connected Successfully! (Model: ' + model + ')',
 				);
 				return true;
+			} else {
+				const status = ' [HTTP ' + response.status + ']';
+				if (response.status === 400 || response.status === 403) {
+					new Notice(
+						'API Error' +
+							status +
+							': Invalid API Key or not enabled in Google Cloud Console.',
+					);
+				} else if (response.status === 404) {
+					new Notice('API Error' + status + ': Model not found.');
+				} else {
+					new Notice('API Test Failed' + status);
+				}
 			}
 		} catch (error: unknown) {
 			console.error(
 				'[Mobile Translate] API Test Failed Detailed Error:',
 				error,
 			);
-
-			const reqErr = error as RequestError;
-			const status = reqErr.status ? ' [HTTP ' + reqErr.status + ']' : '';
-			const msg = reqErr.message || 'Network error / invalid response';
-
-			if (reqErr.status === 400 || reqErr.status === 403) {
-				new Notice(
-					'API Error' +
-						status +
-						': Invalid API Key or API not enabled in Google Cloud Studio.',
-				);
-			} else if (reqErr.status === 404) {
-				new Notice('API Error' + status + ': Model not found.');
-			} else {
-				new Notice('API Test Failed' + status + ': ' + msg);
-			}
+			new Notice(
+				'Network Error: ' +
+					(error instanceof Error ? error.message : String(error)),
+			);
 		}
 		return false;
 	}
