@@ -195,7 +195,7 @@ export class TranslatorSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName('Gemini AI Context Settings')
+			.setName('Gemini AI Context Sentence')
 			.setHeading();
 
 		new Setting(containerEl)

@@ -44,6 +44,12 @@ interface GoogleTranslationBody {
 	source?: string;
 }
 
+interface GoogleTranslationResponse {
+	data?: {
+		translations?: { translatedText: string }[];
+	};
+}
+
 export default class MyTranslatorPlugin extends Plugin {
 	settings!: TranslatorPluginSettings;
 	cachedGeminiModel: string | null = null;
@@ -108,11 +114,9 @@ export default class MyTranslatorPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			await this.loadData(),
-		);
+		const loadedData =
+			(await this.loadData()) as Partial<TranslatorPluginSettings> | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, loadedData);
 
 		if (!this.settings.outputBlocks) {
 			this.settings.outputBlocks = DEFAULT_SETTINGS.outputBlocks;
@@ -240,12 +244,10 @@ export default class MyTranslatorPlugin extends Plugin {
 					body: JSON.stringify(bodyPayload),
 				});
 
-				if (
-					response.status === 200 &&
-					response.json?.data?.translations
-				) {
-					translatedText =
-						response.json.data.translations[0].translatedText;
+				const json = response.json as GoogleTranslationResponse;
+
+				if (response.status === 200 && json.data?.translations?.[0]) {
+					translatedText = json.data.translations[0].translatedText;
 				} else {
 					throw new Error('API returned an invalid structure.');
 				}
@@ -405,14 +407,10 @@ export default class MyTranslatorPlugin extends Plugin {
 
 			if (response.status === 200 && response.json) {
 				const json = response.json as GeminiGenerateResponse;
-				if (response.status === 200 && response.json) {
-					const json = response.json as GeminiGenerateResponse;
-					const text =
-						json.candidates?.[0]?.content?.parts?.[0]?.text;
+				const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
 
-					if (text) {
-						return text.trim();
-					}
+				if (text) {
+					return text.trim();
 				}
 			}
 			return null;
