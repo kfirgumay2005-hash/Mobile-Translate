@@ -1,53 +1,37 @@
-import { Plugin, Editor, MarkdownView, Notice } from 'obsidian';
+import { Plugin, Editor, MarkdownView, Notice, requestUrl } from 'obsidian';
 import {
-	MobileTranslateSettings,
+	TranslatorPluginSettings,
 	DEFAULT_SETTINGS,
-	MobileTranslateSettingTab,
-	LANGUAGES,
+	TranslatorSettingTab,
 } from './settings';
 
-interface TranslationResult {
-	main: string;
-	alternatives: string | null;
-}
-
-interface GeminiPart {
-	text: string;
-}
-
-interface GeminiContent {
-	parts: GeminiPart[];
-}
-
-interface GeminiCandidate {
-	content: GeminiContent;
-}
-
-interface GeminiResponse {
-	candidates?: GeminiCandidate[];
-}
-
-interface GeminiModel {
-	name: string;
-	supportedGenerationMethods?: string[];
-}
-
-interface GeminiModelsResponse {
-	models?: GeminiModel[];
-}
-
-interface ParsedTranslation {
-	main?: string;
-	alternatives?: string[];
-}
-
-export default class MobileTranslatePlugin extends Plugin {
-	settings!: MobileTranslateSettings;
-	cachedAutoModel: string | null = null;
+export default class MyTranslatorPlugin extends Plugin {
+	settings!: TranslatorPluginSettings;
+	cachedGeminiModel: string | null = null;
 
 	async onload() {
 		await this.loadSettings();
-		this.addSettingTab(new MobileTranslateSettingTab(this.app, this));
+		this.addSettingTab(new TranslatorSettingTab(this.app, this));
+
+		this.addRibbonIcon('languages', 'Translate Text', () => {
+			const activeView =
+				this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (activeView) {
+				this.processTranslation(activeView.editor);
+			} else {
+				new Notice('Please open a file first.');
+			}
+		});
+
+		this.addRibbonIcon('sparkles', 'Generate AI Context', () => {
+			const activeView =
+				this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (activeView) {
+				this.processContextGeneration(activeView.editor);
+			} else {
+				new Notice('Please open a file first.');
+			}
+		});
 
 		this.addCommand({
 			id: 'translate-selected-text',
@@ -60,116 +44,13 @@ export default class MobileTranslatePlugin extends Plugin {
 					new Notice('Please open a file first.');
 					return;
 				}
-				const editor = activeView.editor;
-				const selection = editor.getSelection().trim();
-
-				if (!selection) {
-					new Notice('No text selected for translation.');
-					return;
-				}
-
-				if (!this.getCleanApiKey()) {
-					new Notice(
-						'Gemini API key is required. Please set it in the plugin settings.',
-					);
-					return;
-				}
-
-				new Notice('Translating...');
-
-				try {
-					const translation = await this.fetchTranslation(selection);
-
-					if (translation) {
-						if (this.settings.removePunctuation) {
-							translation.main = this.cleanText(translation.main);
-							if (translation.alternatives) {
-								translation.alternatives = this.cleanText(
-									translation.alternatives,
-								);
-							}
-						}
-
-						const shouldGenerate =
-							this.settings.sentenceMode === 'auto';
-						const uniquePlaceholder =
-							'⏳ Generating sentence for "' + selection + '"...';
-
-						if (this.settings.insertIntoEditor) {
-							this.replaceSelection(
-								editor,
-								selection,
-								translation,
-								shouldGenerate ? uniquePlaceholder : null,
-							);
-						} else {
-							let popupText = 'Translation: ' + translation.main;
-							if (translation.alternatives)
-								popupText += '\n' + translation.alternatives;
-							new Notice(popupText, 5000);
-						}
-
-						if (shouldGenerate) {
-							void this.fetchGeminiSentence(selection)
-								.then((sentence) => {
-									if (sentence) {
-										if (this.settings.insertIntoEditor) {
-											this.replaceTextInEditor(
-												editor,
-												uniquePlaceholder,
-												sentence,
-											);
-										} else {
-											new Notice(
-												'Context for "' +
-													selection +
-													'":\n' +
-													sentence,
-												7000,
-											);
-										}
-									} else {
-										if (this.settings.insertIntoEditor) {
-											this.replaceTextInEditor(
-												editor,
-												uniquePlaceholder,
-												'❌ Failed to generate sentence.',
-											);
-										}
-									}
-								})
-								.catch((err: unknown) => {
-									console.error(
-										'[Mobile Translate] Sentence Error:',
-										err,
-									);
-									if (this.settings.insertIntoEditor) {
-										this.replaceTextInEditor(
-											editor,
-											uniquePlaceholder,
-											'❌ Failed to generate sentence.',
-										);
-									}
-								});
-						}
-					} else {
-						new Notice('No translation found.');
-					}
-				} catch (error: unknown) {
-					console.error(
-						'[Mobile Translate] Detailed Translation error:',
-						error,
-					);
-					const msg =
-						error instanceof Error ? error.message : String(error);
-					new Notice('Error connecting: ' + msg);
-				}
+				await this.processTranslation(activeView.editor);
 			},
 		});
 
 		this.addCommand({
 			id: 'generate-context-sentence',
-			name: 'Generate Context Sentence',
+			name: 'Generate context sentence',
 			icon: 'sparkles',
 			callback: async () => {
 				const activeView =
@@ -178,324 +59,318 @@ export default class MobileTranslatePlugin extends Plugin {
 					new Notice('Please open a file first.');
 					return;
 				}
-				const editor = activeView.editor;
-				const selection = editor.getSelection().trim();
-
-				if (!selection) {
-					new Notice('No text selected.');
-					return;
-				}
-				if (!this.getCleanApiKey()) {
-					new Notice('Gemini API key is required.');
-					return;
-				}
-
-				const uniquePlaceholder =
-					'⏳ Generating sentence for "' + selection + '"...';
-				editor.replaceSelection(selection + '\n> ' + uniquePlaceholder);
-
-				void this.fetchGeminiSentence(selection)
-					.then((sentence) => {
-						if (sentence) {
-							this.replaceTextInEditor(
-								editor,
-								uniquePlaceholder,
-								sentence,
-							);
-						} else {
-							this.replaceTextInEditor(
-								editor,
-								uniquePlaceholder,
-								'❌ Failed to generate.',
-							);
-						}
-					})
-					.catch((err: unknown) => {
-						console.error(
-							'[Mobile Translate] Generate Error:',
-							err,
-						);
-						this.replaceTextInEditor(
-							editor,
-							uniquePlaceholder,
-							'❌ Failed to generate.',
-						);
-					});
+				await this.processContextGeneration(activeView.editor);
 			},
 		});
 	}
 
-	getCleanApiKey(): string {
-		const rawKey = this.settings.geminiApiKey || '';
-		return rawKey.trim();
+	onunload() {}
+
+	async loadSettings() {
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData(),
+		);
+
+		if (!this.settings.outputBlocks) {
+			this.settings.outputBlocks = DEFAULT_SETTINGS.outputBlocks;
+		}
 	}
 
-	cleanText(text: string): string {
+	async saveSettings() {
+		await this.saveData(this.settings);
+	}
+
+	private cleanApiKey(key: string): string {
+		return key.replace(/[\u200B-\u200D\uFEFF\s"']/g, '').trim();
+	}
+
+	private removePunctuation(text: string): string {
 		return text
 			.normalize('NFD')
 			.replace(/[\u0300-\u036f]/g, '')
 			.replace(/[\p{P}\u0591-\u05C7]/gu, '')
+			.replace(/\s{2,}/g, ' ')
 			.trim();
 	}
 
-	replaceTextInEditor(
-		editor: Editor,
-		targetText: string,
-		replacementText: string,
-	) {
-		const cursor = editor.getCursor();
-		const lineCount = editor.lineCount();
-
-		for (let i = 0; i < lineCount; i++) {
-			const line = editor.getLine(i);
-			if (line.includes(targetText)) {
-				editor.setLine(i, line.replace(targetText, replacementText));
-				break;
-			}
-		}
-		editor.setCursor(cursor);
-	}
-
-	async fetchTranslation(text: string): Promise<TranslationResult | null> {
-		const apiKey = this.getCleanApiKey();
-		if (!apiKey) return null;
-
-		const model = await this.getResolvedModel();
-		const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-		const targetLangName =
-			LANGUAGES[this.settings.targetLang] || this.settings.targetLang;
-		const maxAlt = this.settings.showAlternatives
-			? this.settings.maxAlternatives
-			: 0;
-
-		const promptText =
-			'Translate the exact word or phrase "' +
-			text +
-			'" to ' +
-			targetLangName +
-			'.\n' +
-			'Return ONLY a raw JSON object (no markdown, no quotes) with this exact structure:\n' +
-			'{"main": "primary translation", "alternatives": []}.\n' +
-			'If alternatives exist, put up to ' +
-			maxAlt +
-			' distinct alternative translation strings in the array. If none or max is 0, leave empty.';
-
-		try {
-			const response = await fetch(url, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					contents: [{ parts: [{ text: promptText }] }],
-				}),
-			});
-
-			if (!response.ok) {
-				throw new Error(`HTTP ${response.status}`);
-			}
-
-			const data = (await response.json()) as GeminiResponse;
-			const responseText =
-				data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-			if (responseText) {
-				let rawText = responseText
-					.trim()
-					.replace(/^```json/i, '')
-					.replace(/^```/i, '')
-					.replace(/```$/i, '')
-					.trim();
-
-				const parsedData = JSON.parse(rawText) as ParsedTranslation;
-
-				let alternativesText: string | null = null;
-				if (
-					this.settings.showAlternatives &&
-					Array.isArray(parsedData.alternatives) &&
-					parsedData.alternatives.length > 0
-				) {
-					alternativesText = parsedData.alternatives.join('\n');
-				}
-
-				return {
-					main: parsedData.main || '',
-					alternatives: alternativesText,
-				};
-			}
-		} catch (err: unknown) {
-			console.error('[Mobile Translate] Translation Error:', err);
-			const errMsg = err instanceof Error ? err.message : String(err);
-			new Notice('Translation Failed: ' + errMsg);
-		}
-
-		return null;
+	private sanitizeContextSentence(sentence: string): string {
+		return sentence.replace(/^["'״׳]+|["'״׳]+$/g, '').trim();
 	}
 
 	async getResolvedModel(): Promise<string> {
-		if (this.cachedAutoModel) return this.cachedAutoModel;
+		if (this.cachedGeminiModel) return this.cachedGeminiModel;
 
-		const apiKey = this.getCleanApiKey();
-		if (!apiKey) return 'gemini-2.0-flash';
+		const apiKey = this.cleanApiKey(this.settings.geminiApiKey);
+		if (!apiKey) return 'gemini-1.5-flash-lite';
 
-		const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
 		try {
-			const response = await fetch(url, { method: 'GET' });
-			if (!response.ok) return 'gemini-2.0-flash';
+			const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+			const response = await requestUrl({ url: url, method: 'GET' });
 
-			const data = (await response.json()) as GeminiModelsResponse;
-
-			if (data?.models) {
-				const validModels = data.models
-					.filter((m) =>
+			if (response.status === 200 && response.json?.models) {
+				const validModels = response.json.models
+					.filter((m: any) =>
 						m.supportedGenerationMethods?.includes(
 							'generateContent',
 						),
 					)
-					.map((m) => m.name.replace('models/', ''));
+					.map((m: any) => m.name.replace('models/', ''));
 
-				const selectedModel =
-					validModels.find((name: string) =>
-						name.includes('flash-lite'),
-					) ||
-					validModels.find((name: string) =>
-						name.includes('flash'),
-					) ||
-					validModels[0];
+				const liteModel = validModels.find((name: string) =>
+					name.includes('flash-lite'),
+				);
 
-				if (selectedModel) {
-					this.cachedAutoModel = selectedModel;
-					return selectedModel;
+				if (liteModel) {
+					this.cachedGeminiModel = liteModel;
+					return liteModel;
 				}
 			}
-		} catch (error: unknown) {
+		} catch (error) {
 			console.error(
 				'[Mobile Translate] Failed to auto-detect model:',
 				error,
 			);
 		}
 
-		return 'gemini-2.0-flash';
+		return 'gemini-1.5-flash-lite';
 	}
 
-	async fetchGeminiSentence(word: string): Promise<string | null> {
-		const apiKey = this.getCleanApiKey();
-		if (!apiKey) return null;
+	async processTranslation(editor: Editor) {
+		let selection = editor.getSelection().trim();
+		if (!selection) {
+			new Notice('No text selected.');
+			return;
+		}
 
-		const model = await this.getResolvedModel();
-		const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+		if (
+			this.settings.useOutputBuilder &&
+			(!this.settings.outputBlocks ||
+				this.settings.outputBlocks.length === 0)
+		) {
+			new Notice(
+				'Please add at least one block in the Output Builder settings.',
+			);
+			return;
+		}
+
+		const rawSelection = selection;
+		if (this.settings.hidePunctuation) {
+			selection = this.removePunctuation(selection);
+		}
+
+		new Notice('Translating...');
+
 		try {
-			const response = await fetch(url, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					contents: [
-						{
-							parts: [
-								{
-									text:
-										'Write a single, short example sentence using the exact word or phrase: "' +
-										word +
-										'". The sentence must be in the same natural language as the provided word. Do not include any other text, explanations, translations, or quotes. Return only the sentence itself.',
-								},
-							],
-						},
-					],
-				}),
-			});
+			let translatedText = '';
+			let alternatives: string[] = [];
+			const wantsAlternatives =
+				this.settings.useOutputBuilder &&
+				this.settings.outputBlocks.some(
+					(b) => b.type === 'alternatives',
+				);
 
-			if (!response.ok) throw new Error(`HTTP ${response.status}`);
+			if (this.settings.useOfficialApi) {
+				const apiKey = this.cleanApiKey(this.settings.googleApiKey);
+				if (!apiKey) {
+					new Notice('Official Google API key missing.');
+					return;
+				}
+				const url = `https://translation.googleapis.com/language/translate/v2?key=${apiKey}`;
 
-			const data = (await response.json()) as GeminiResponse;
-			const textPart = data.candidates?.[0]?.content?.parts?.[0]?.text;
+				const bodyPayload: Record<string, any> = {
+					q: [selection],
+					target: this.settings.targetLanguage,
+					format: 'text',
+				};
 
-			if (textPart) {
-				return textPart.trim();
+				if (this.settings.sourceLanguage !== 'auto') {
+					bodyPayload.source = this.settings.sourceLanguage;
+				}
+
+				const response = await requestUrl({
+					url: url,
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(bodyPayload),
+				});
+
+				if (
+					response.status === 200 &&
+					response.json?.data?.translations
+				) {
+					translatedText =
+						response.json.data.translations[0].translatedText;
+				} else {
+					throw new Error('API returned an invalid structure.');
+				}
+			} else {
+				const sl = this.settings.sourceLanguage;
+				const tl = this.settings.targetLanguage;
+				const query = encodeURIComponent(selection);
+
+				const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&dt=bd&dj=1&q=${query}`;
+
+				const response = await requestUrl({ url: url, method: 'GET' });
+				if (response.status === 200 && response.json) {
+					const data = response.json;
+					if (data.sentences && data.sentences.length > 0) {
+						translatedText = data.sentences
+							.map((s: any) => s.trans)
+							.join(' ');
+					}
+
+					if (
+						wantsAlternatives &&
+						data.dict &&
+						data.dict.length > 0
+					) {
+						const allTerms = data.dict.flatMap(
+							(d: any) => d.terms || [],
+						);
+						alternatives = [...new Set(allTerms)] as string[];
+						alternatives = alternatives.filter(
+							(term) =>
+								term.toLowerCase() !==
+								translatedText.toLowerCase(),
+						);
+					}
+				} else {
+					throw new Error('Unofficial API connection failed.');
+				}
 			}
-		} catch (error: unknown) {
-			console.error('[Mobile Translate] Gemini Sentence Error:', error);
+
+			if (this.settings.hidePunctuation) {
+				translatedText = this.removePunctuation(translatedText);
+				alternatives = alternatives
+					.map((alt) => this.removePunctuation(alt))
+					.filter(
+						(alt) =>
+							alt.trim() !== '' &&
+							alt.toLowerCase() !== translatedText.toLowerCase(),
+					);
+				alternatives = [...new Set(alternatives)];
+			}
+
+			// Standard inline mode
+			if (!this.settings.useOutputBuilder) {
+				editor.replaceSelection(
+					`${rawSelection}${this.settings.inlineSeparator}${translatedText}`,
+				);
+				new Notice('Translation successfully completed.');
+				return;
+			}
+
+			// Output Builder mode: Fetch context only if the context block exists
+			let contextText = '';
+			if (this.settings.outputBlocks.some((b) => b.type === 'context')) {
+				const contextSentence =
+					await this.fetchGeminiContext(rawSelection);
+				if (contextSentence) {
+					contextText = this.sanitizeContextSentence(contextSentence);
+				}
+			}
+
+			let finalOutputLines: string[] = [];
+
+			for (const block of this.settings.outputBlocks) {
+				if (block.type === 'translation') {
+					finalOutputLines.push(translatedText);
+				} else if (block.type === 'alternatives') {
+					if (alternatives.length > 0) {
+						const limit = this.settings.alternativesCount;
+						const slicedAlts = alternatives.slice(0, limit);
+						finalOutputLines.push(
+							`Alternatives: ${slicedAlts.join(', ')}`,
+						);
+					}
+				} else if (block.type === 'context') {
+					if (contextText) {
+						finalOutputLines.push(`"${contextText}"`);
+					}
+				} else if (block.type === 'custom') {
+					if (block.text && block.text.trim().length > 0) {
+						finalOutputLines.push(block.text);
+					}
+				}
+			}
+
+			const finalBlocksText = finalOutputLines
+				.filter((line) => line.trim() !== '')
+				.join('\n');
+
+			if (finalBlocksText) {
+				editor.replaceSelection(`${rawSelection}\n${finalBlocksText}`);
+			} else {
+				editor.replaceSelection(rawSelection);
+			}
+
+			new Notice('Translation successfully completed.');
+		} catch (error: any) {
+			console.error('Translation Plugin Error:', error);
+			new Notice(
+				`Translation error: ${error.message || 'Check API key or network.'}`,
+			);
 		}
-		return null;
 	}
 
-	async testGeminiAPI(): Promise<boolean> {
-		const apiKey = this.getCleanApiKey();
-		if (!apiKey) {
-			new Notice('Please enter a Gemini API Key first.');
-			return false;
+	async processContextGeneration(editor: Editor) {
+		let selection = editor.getSelection().trim();
+		if (!selection) {
+			new Notice('Select a word for context generation.');
+			return;
 		}
 
-		this.cachedAutoModel = null;
+		new Notice('Requesting context sentence from AI...');
+		const contextSentence = await this.fetchGeminiContext(selection);
+
+		if (contextSentence) {
+			const cleanSentence = this.sanitizeContextSentence(contextSentence);
+			editor.replaceSelection(`${selection}\n"${cleanSentence}"`);
+			new Notice('Context generated successfully.');
+		}
+	}
+
+	async fetchGeminiContext(phrase: string): Promise<string | null> {
+		const apiKey = this.cleanApiKey(this.settings.geminiApiKey);
+		if (!apiKey) {
+			new Notice('Gemini API key is missing. Skipping context.');
+			return null;
+		}
 
 		try {
 			const model = await this.getResolvedModel();
 			const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-			const response = await fetch(url, {
+			const prompt = `Write exactly one short and natural context sentence demonstrating the use of the word/phrase: "${phrase}". The sentence MUST be written entirely in the same language as the word "${phrase}". Do not mix languages. Return ONLY the sentence, no quotation marks, no introductory text.`;
+
+			const response = await requestUrl({
+				url: url,
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					contents: [{ parts: [{ text: "Respond with 'OK'" }] }],
+					contents: [{ parts: [{ text: prompt }] }],
+					generationConfig: {
+						temperature: 0.1,
+						maxOutputTokens: 50,
+					},
 				}),
 			});
 
-			if (response.ok) {
-				new Notice(
-					'API Connected Successfully! (Model: ' + model + ')',
-				);
-				return true;
+			if (
+				response.status === 200 &&
+				response.json.candidates &&
+				response.json.candidates.length > 0
+			) {
+				const text = response.json.candidates[0].content.parts[0].text;
+				return text.trim();
 			} else {
-				const status = ' [HTTP ' + response.status + ']';
-				if (response.status === 400 || response.status === 403) {
-					new Notice(
-						'API Error' +
-							status +
-							': Invalid API Key or not enabled in Google Cloud Console.',
-					);
-				} else if (response.status === 404) {
-					new Notice('API Error' + status + ': Model not found.');
-				} else {
-					new Notice('API Test Failed' + status);
-				}
+				return null;
 			}
-		} catch (error: unknown) {
-			console.error(
-				'[Mobile Translate] API Test Failed Detailed Error:',
-				error,
-			);
-			new Notice(
-				'Network Error: ' +
-					(error instanceof Error ? error.message : String(error)),
-			);
+		} catch (error: any) {
+			console.error('Gemini API Error:', error);
+			new Notice('Gemini API Error: Check key or restrictions.');
+			return null;
 		}
-		return false;
-	}
-
-	replaceSelection(
-		editor: Editor,
-		originalText: string,
-		translation: TranslationResult,
-		exampleSentence: string | null,
-	) {
-		let newText = originalText + this.settings.separator + translation.main;
-
-		if (translation.alternatives) {
-			newText += '\n' + translation.alternatives;
-		}
-		if (exampleSentence) {
-			newText += '\n> ' + exampleSentence;
-		}
-
-		editor.replaceSelection(newText);
-	}
-
-	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<MobileTranslateSettings>,
-		);
-	}
-
-	async saveSettings() {
-		await this.saveData(this.settings);
 	}
 }

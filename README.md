@@ -4,25 +4,23 @@ Tap or Select the desired word to get it's translation from Google Translate. Wo
 
 ## Installation and Setup:
 
-1. Install and enable the plugin from Obsidian Community Plugins.
-2. Grab your Gemini API key at https://aistudio.google.com/api-keys
-3. Add translate button on your phone: Navigate to Settings > Interface > Configure mobile toolbar > Add a command
-4. Add Mobile-Translate: Translate text
+Install and enable the plugin from Obsidian Community Plugins.
+
+If it doesn't work on your mobile without an API (Probably due to VPN):
+Navigate to https://console.cloud.google.com/apis/library and get Cloud Translation API.
+It will ask for billing account , link a payment (It won't charge you because you need to translate above 0.5M characters in a month)
+Go to https://console.cloud.google.com/apis/credentials and create credentials-> API Key
+Select cloud translate as API restriction , keep it in None for Application restriction , and create and copy your API key.
+
+If you want to generate context sentences:
+Grab your Gemini API key at https://aistudio.google.com/api-keys
+
+Add translate button on your mobile:
+Navigate to Settings > Interface > Configure mobile toolbar > Add a command
+Add Mobile-Translate: Translate text
+Optional: Mobile-Translate: Gere
 
 ## Mobile Translate: Feature Guide
 
-Source Language: Choose the original language of the text you want to translate, or use "Detect Language" to let the plugin figure it out automatically.
-
-Target Language: Select your preferred destination language from the list of supported languages.
-
-Hide Punctuation & Diacritics: Automatically strips punctuation marks, vowel points, and accent marks.
-
-Show Alternative Translations: Pulls additional dictionary meanings from Google to give you a broader understanding of the word.
-
-Maximum Alternatives: A handy slider that lets you limit how many extra alternative translations are displayed (from 1 to 10).
-
-Generate Context Sentence: Creates a short example sentence using your selected word. You can set this to run automatically during translation, or trigger it manually via the command palette.
-
-Insert Translation into Editor: Decide whether your translations, alternatives, and AI-generated sentences get directly pasted into your Obsidian note, or simply appear as a temporary notification popup on your screen.
-
-Separator: Customize the characters used to separate your original word from its translation inline (such as -).
+This is a very simple yet powerful plugin because of the consistency Google Translate provides over an AI.
+Play with it yourself to figure out what's best for you :D
