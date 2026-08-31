@@ -69,6 +69,10 @@ export class TranslatorSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	getSettingDefinitions() {
+		return [];
+	}
+
 	private cleanApiKey(key: string): string {
 		return key.replace(/[\u200B-\u200D\uFEFF\s"']/g, '').trim();
 	}
@@ -77,7 +81,9 @@ export class TranslatorSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl('h2', { text: 'Google Translate Configuration' });
+		new Setting(containerEl)
+			.setName('Google Translate Configuration')
+			.setHeading();
 
 		new Setting(containerEl)
 			.setName('Use Cloud Translation API')
@@ -135,7 +141,7 @@ export class TranslatorSettingTab extends PluginSettingTab {
 							} else {
 								new Notice(`Error: HTTP ${res.status}`);
 							}
-						} catch (e: any) {
+						} catch (_error: unknown) {
 							new Notice(
 								'Cloud API Error: Check key and network.',
 							);
@@ -174,7 +180,7 @@ export class TranslatorSettingTab extends PluginSettingTab {
 					});
 			});
 
-		containerEl.createEl('h2', { text: 'Formatting & UI Output' });
+		new Setting(containerEl).setName('Formatting & UI Output').setHeading();
 
 		new Setting(containerEl)
 			.setName('Hide Punctuation')
@@ -188,7 +194,9 @@ export class TranslatorSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl('h2', { text: 'Gemini AI Context Settings' });
+		new Setting(containerEl)
+			.setName('Gemini AI Context Settings')
+			.setHeading();
 
 		new Setting(containerEl)
 			.setName('Gemini AI Studio API Key')
@@ -238,13 +246,13 @@ export class TranslatorSettingTab extends PluginSettingTab {
 						} else {
 							new Notice(`Error: HTTP ${res.status}`);
 						}
-					} catch (e: any) {
+					} catch (_error: unknown) {
 						new Notice('Failed to connect to Gemini.');
 					}
 				}),
 			);
 
-		containerEl.createEl('h2', { text: 'Output Strategy' });
+		new Setting(containerEl).setName('Output Strategy').setHeading();
 
 		new Setting(containerEl)
 			.setName('Use Output Builder')
@@ -297,42 +305,51 @@ export class TranslatorSettingTab extends PluginSettingTab {
 	}
 
 	private renderOutputBlockBuilder(containerEl: HTMLElement) {
-		containerEl.createEl('h3', { text: 'Output Builder' });
+		new Setting(containerEl).setName('Output Builder').setHeading();
 
 		const desc = containerEl.createEl('p', {
 			text: 'Build your output format! Add blocks and order them using the Up/Down arrows.',
 		});
-		desc.style.color = 'var(--text-muted)';
-		desc.style.fontSize = '0.9em';
-		desc.style.marginBottom = '15px';
+		desc.setCssStyles({
+			color: 'var(--text-muted)',
+			fontSize: '0.9em',
+			marginBottom: '15px',
+		});
 
 		const blocksContainer = containerEl.createDiv();
-		blocksContainer.style.display = 'flex';
-		blocksContainer.style.flexDirection = 'column';
-		blocksContainer.style.gap = '10px';
-		blocksContainer.style.marginBottom = '20px';
+		blocksContainer.setCssStyles({
+			display: 'flex',
+			flexDirection: 'column',
+			gap: '10px',
+			marginBottom: '20px',
+		});
 
 		this.plugin.settings.outputBlocks.forEach((block, index) => {
 			const blockEl = blocksContainer.createDiv();
-			blockEl.style.display = 'flex';
-			blockEl.style.alignItems = 'center';
-			blockEl.style.gap = '12px';
-			blockEl.style.padding = '12px';
-			blockEl.style.backgroundColor = 'var(--background-secondary)';
-			blockEl.style.border =
-				'1px solid var(--background-modifier-border)';
-			blockEl.style.borderRadius = '8px';
+			blockEl.setCssStyles({
+				display: 'flex',
+				alignItems: 'center',
+				gap: '12px',
+				padding: '12px',
+				backgroundColor: 'var(--background-secondary)',
+				border: '1px solid var(--background-modifier-border)',
+				borderRadius: '8px',
+			});
 
 			const orderControls = blockEl.createDiv();
-			orderControls.style.display = 'flex';
-			orderControls.style.flexDirection = 'column';
-			orderControls.style.gap = '4px';
+			orderControls.setCssStyles({
+				display: 'flex',
+				flexDirection: 'column',
+				gap: '4px',
+			});
 
 			const upBtn = orderControls.createEl('button', { text: '▲' });
-			upBtn.style.padding = '2px 6px';
-			upBtn.style.boxShadow = 'none';
 			upBtn.disabled = index === 0;
-			if (!upBtn.disabled) upBtn.style.cursor = 'pointer';
+			upBtn.setCssStyles({
+				padding: '2px 6px',
+				boxShadow: 'none',
+				cursor: upBtn.disabled ? 'default' : 'pointer',
+			});
 			upBtn.onclick = async () => {
 				const blocks = this.plugin.settings.outputBlocks;
 				const current = blocks[index];
@@ -347,11 +364,13 @@ export class TranslatorSettingTab extends PluginSettingTab {
 			};
 
 			const downBtn = orderControls.createEl('button', { text: '▼' });
-			downBtn.style.padding = '2px 6px';
-			downBtn.style.boxShadow = 'none';
 			downBtn.disabled =
 				index === this.plugin.settings.outputBlocks.length - 1;
-			if (!downBtn.disabled) downBtn.style.cursor = 'pointer';
+			downBtn.setCssStyles({
+				padding: '2px 6px',
+				boxShadow: 'none',
+				cursor: downBtn.disabled ? 'default' : 'pointer',
+			});
 			downBtn.onclick = async () => {
 				const blocks = this.plugin.settings.outputBlocks;
 				const current = blocks[index];
@@ -366,7 +385,9 @@ export class TranslatorSettingTab extends PluginSettingTab {
 			};
 
 			const contentEl = blockEl.createDiv();
-			contentEl.style.flexGrow = '1';
+			contentEl.setCssStyles({
+				flexGrow: '1',
+			});
 
 			const typeLabels: Record<string, string> = {
 				translation: '🔤 Translation Block',
@@ -382,8 +403,10 @@ export class TranslatorSettingTab extends PluginSettingTab {
 				input.type = 'text';
 				input.value = block.text || '';
 				input.placeholder = 'Type custom text... (e.g. ---)';
-				input.style.width = '100%';
-				input.style.marginTop = '8px';
+				input.setCssStyles({
+					width: '100%',
+					marginTop: '8px',
+				});
 				input.onchange = async () => {
 					block.text = input.value;
 					await this.plugin.saveSettings();
@@ -391,9 +414,11 @@ export class TranslatorSettingTab extends PluginSettingTab {
 			}
 
 			const delBtn = blockEl.createEl('button', { text: '🗑️' });
-			delBtn.style.boxShadow = 'none';
-			delBtn.style.background = 'transparent';
-			delBtn.style.cursor = 'pointer';
+			delBtn.setCssStyles({
+				boxShadow: 'none',
+				background: 'transparent',
+				cursor: 'pointer',
+			});
 			delBtn.onclick = async () => {
 				this.plugin.settings.outputBlocks.splice(index, 1);
 				await this.plugin.saveSettings();
@@ -402,8 +427,10 @@ export class TranslatorSettingTab extends PluginSettingTab {
 		});
 
 		const addContainer = containerEl.createDiv();
-		addContainer.style.display = 'flex';
-		addContainer.style.gap = '10px';
+		addContainer.setCssStyles({
+			display: 'flex',
+			gap: '10px',
+		});
 
 		const selectEl = addContainer.createEl('select');
 		selectEl.createEl('option', {

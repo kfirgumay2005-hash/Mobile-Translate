@@ -5,6 +5,45 @@ import {
 	TranslatorSettingTab,
 } from './settings';
 
+interface GeminiModel {
+	name: string;
+	supportedGenerationMethods?: string[];
+}
+
+interface GeminiModelsResponse {
+	models?: GeminiModel[];
+}
+
+interface GeminiCandidate {
+	content: {
+		parts: { text: string }[];
+	};
+}
+
+interface GeminiGenerateResponse {
+	candidates?: GeminiCandidate[];
+}
+
+interface TranslateSentence {
+	trans?: string;
+}
+
+interface TranslateDict {
+	terms?: string[];
+}
+
+interface TranslateResponse {
+	sentences?: TranslateSentence[];
+	dict?: TranslateDict[];
+}
+
+interface GoogleTranslationBody {
+	q: string[];
+	target: string;
+	format: string;
+	source?: string;
+}
+
 export default class MyTranslatorPlugin extends Plugin {
 	settings!: TranslatorPluginSettings;
 	cachedGeminiModel: string | null = null;
@@ -17,7 +56,7 @@ export default class MyTranslatorPlugin extends Plugin {
 			const activeView =
 				this.app.workspace.getActiveViewOfType(MarkdownView);
 			if (activeView) {
-				this.processTranslation(activeView.editor);
+				void this.processTranslation(activeView.editor);
 			} else {
 				new Notice('Please open a file first.');
 			}
@@ -27,7 +66,7 @@ export default class MyTranslatorPlugin extends Plugin {
 			const activeView =
 				this.app.workspace.getActiveViewOfType(MarkdownView);
 			if (activeView) {
-				this.processContextGeneration(activeView.editor);
+				void this.processContextGeneration(activeView.editor);
 			} else {
 				new Notice('Please open a file first.');
 			}
@@ -37,14 +76,14 @@ export default class MyTranslatorPlugin extends Plugin {
 			id: 'translate-selected-text',
 			name: 'Translate text',
 			icon: 'languages',
-			callback: async () => {
+			callback: () => {
 				const activeView =
 					this.app.workspace.getActiveViewOfType(MarkdownView);
 				if (!activeView) {
 					new Notice('Please open a file first.');
 					return;
 				}
-				await this.processTranslation(activeView.editor);
+				void this.processTranslation(activeView.editor);
 			},
 		});
 
@@ -52,19 +91,21 @@ export default class MyTranslatorPlugin extends Plugin {
 			id: 'generate-context-sentence',
 			name: 'Generate context sentence',
 			icon: 'sparkles',
-			callback: async () => {
+			callback: () => {
 				const activeView =
 					this.app.workspace.getActiveViewOfType(MarkdownView);
 				if (!activeView) {
 					new Notice('Please open a file first.');
 					return;
 				}
-				await this.processContextGeneration(activeView.editor);
+				void this.processContextGeneration(activeView.editor);
 			},
 		});
 	}
 
-	onunload() {}
+	onunload() {
+		// Cleanup resources here if needed
+	}
 
 	async loadSettings() {
 		this.settings = Object.assign(
@@ -109,25 +150,28 @@ export default class MyTranslatorPlugin extends Plugin {
 			const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
 			const response = await requestUrl({ url: url, method: 'GET' });
 
-			if (response.status === 200 && response.json?.models) {
-				const validModels = response.json.models
-					.filter((m: any) =>
-						m.supportedGenerationMethods?.includes(
-							'generateContent',
-						),
-					)
-					.map((m: any) => m.name.replace('models/', ''));
+			if (response.status === 200 && response.json) {
+				const json = response.json as GeminiModelsResponse;
+				if (json.models) {
+					const validModels = json.models
+						.filter((m) =>
+							m.supportedGenerationMethods?.includes(
+								'generateContent',
+							),
+						)
+						.map((m) => m.name.replace('models/', ''));
 
-				const liteModel = validModels.find((name: string) =>
-					name.includes('flash-lite'),
-				);
+					const liteModel = validModels.find((name) =>
+						name.includes('flash-lite'),
+					);
 
-				if (liteModel) {
-					this.cachedGeminiModel = liteModel;
-					return liteModel;
+					if (liteModel) {
+						this.cachedGeminiModel = liteModel;
+						return liteModel;
+					}
 				}
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error(
 				'[Mobile Translate] Failed to auto-detect model:',
 				error,
@@ -179,7 +223,7 @@ export default class MyTranslatorPlugin extends Plugin {
 				}
 				const url = `https://translation.googleapis.com/language/translate/v2?key=${apiKey}`;
 
-				const bodyPayload: Record<string, any> = {
+				const bodyPayload: GoogleTranslationBody = {
 					q: [selection],
 					target: this.settings.targetLanguage,
 					format: 'text',
@@ -214,10 +258,10 @@ export default class MyTranslatorPlugin extends Plugin {
 
 				const response = await requestUrl({ url: url, method: 'GET' });
 				if (response.status === 200 && response.json) {
-					const data = response.json;
+					const data = response.json as TranslateResponse;
 					if (data.sentences && data.sentences.length > 0) {
 						translatedText = data.sentences
-							.map((s: any) => s.trans)
+							.map((s) => s.trans || '')
 							.join(' ');
 					}
 
@@ -227,9 +271,9 @@ export default class MyTranslatorPlugin extends Plugin {
 						data.dict.length > 0
 					) {
 						const allTerms = data.dict.flatMap(
-							(d: any) => d.terms || [],
+							(d) => d.terms || [],
 						);
-						alternatives = [...new Set(allTerms)] as string[];
+						alternatives = [...new Set(allTerms)];
 						alternatives = alternatives.filter(
 							(term) =>
 								term.toLowerCase() !==
@@ -272,7 +316,7 @@ export default class MyTranslatorPlugin extends Plugin {
 				}
 			}
 
-			let finalOutputLines: string[] = [];
+			const finalOutputLines: string[] = [];
 
 			for (const block of this.settings.outputBlocks) {
 				if (block.type === 'translation') {
@@ -307,16 +351,18 @@ export default class MyTranslatorPlugin extends Plugin {
 			}
 
 			new Notice('Translation successfully completed.');
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('Translation Plugin Error:', error);
-			new Notice(
-				`Translation error: ${error.message || 'Check API key or network.'}`,
-			);
+			const errorMsg =
+				error instanceof Error
+					? error.message
+					: 'Check API key or network.';
+			new Notice(`Translation error: ${errorMsg}`);
 		}
 	}
 
 	async processContextGeneration(editor: Editor) {
-		let selection = editor.getSelection().trim();
+		const selection = editor.getSelection().trim();
 		if (!selection) {
 			new Notice('Select a word for context generation.');
 			return;
@@ -357,17 +403,20 @@ export default class MyTranslatorPlugin extends Plugin {
 				}),
 			});
 
-			if (
-				response.status === 200 &&
-				response.json.candidates &&
-				response.json.candidates.length > 0
-			) {
-				const text = response.json.candidates[0].content.parts[0].text;
-				return text.trim();
-			} else {
-				return null;
+			if (response.status === 200 && response.json) {
+				const json = response.json as GeminiGenerateResponse;
+				if (response.status === 200 && response.json) {
+					const json = response.json as GeminiGenerateResponse;
+					const text =
+						json.candidates?.[0]?.content?.parts?.[0]?.text;
+
+					if (text) {
+						return text.trim();
+					}
+				}
 			}
-		} catch (error: any) {
+			return null;
+		} catch (error: unknown) {
 			console.error('Gemini API Error:', error);
 			new Notice('Gemini API Error: Check key or restrictions.');
 			return null;
