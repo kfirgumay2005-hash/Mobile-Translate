@@ -32,9 +32,19 @@ interface TranslateDict {
 	terms?: string[];
 }
 
+interface TranslateDefinitionEntry {
+	gloss?: string;
+}
+
+interface TranslateDefinition {
+	pos?: string;
+	entry?: TranslateDefinitionEntry[];
+}
+
 interface TranslateResponse {
 	sentences?: TranslateSentence[];
 	dict?: TranslateDict[];
+	definitions?: TranslateDefinition[];
 }
 
 interface GoogleTranslationBody {
@@ -58,24 +68,12 @@ export default class MyTranslatorPlugin extends Plugin {
 		await this.loadSettings();
 		this.addSettingTab(new TranslatorSettingTab(this.app, this));
 
+		// 1. Translate Button & Command
 		this.addRibbonIcon('languages', 'Translate Text', () => {
 			const activeView =
 				this.app.workspace.getActiveViewOfType(MarkdownView);
-			if (activeView) {
-				void this.processTranslation(activeView.editor);
-			} else {
-				new Notice('Please open a file first.');
-			}
-		});
-
-		this.addRibbonIcon('sparkles', 'Generate AI Context', () => {
-			const activeView =
-				this.app.workspace.getActiveViewOfType(MarkdownView);
-			if (activeView) {
-				void this.processContextGeneration(activeView.editor);
-			} else {
-				new Notice('Please open a file first.');
-			}
+			if (activeView) void this.processTranslation(activeView.editor);
+			else new Notice('Please open a file first.');
 		});
 
 		this.addCommand({
@@ -85,12 +83,18 @@ export default class MyTranslatorPlugin extends Plugin {
 			callback: () => {
 				const activeView =
 					this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (!activeView) {
-					new Notice('Please open a file first.');
-					return;
-				}
-				void this.processTranslation(activeView.editor);
+				if (activeView) void this.processTranslation(activeView.editor);
+				else new Notice('Please open a file first.');
 			},
+		});
+
+		// 2. Context Sentence Button & Command
+		this.addRibbonIcon('sparkles', 'Generate AI Context', () => {
+			const activeView =
+				this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (activeView)
+				void this.processContextGeneration(activeView.editor);
+			else new Notice('Please open a file first.');
 		});
 
 		this.addCommand({
@@ -100,11 +104,31 @@ export default class MyTranslatorPlugin extends Plugin {
 			callback: () => {
 				const activeView =
 					this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (!activeView) {
-					new Notice('Please open a file first.');
-					return;
-				}
-				void this.processContextGeneration(activeView.editor);
+				if (activeView)
+					void this.processContextGeneration(activeView.editor);
+				else new Notice('Please open a file first.');
+			},
+		});
+
+		// 3. NEW: AI Explanation Only Button & Command
+		this.addRibbonIcon('book', 'Generate AI Explanation', () => {
+			const activeView =
+				this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (activeView)
+				void this.processExplanationGeneration(activeView.editor);
+			else new Notice('Please open a file first.');
+		});
+
+		this.addCommand({
+			id: 'generate-ai-explanation',
+			name: 'Generate AI explanation',
+			icon: 'book',
+			callback: () => {
+				const activeView =
+					this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (activeView)
+					void this.processExplanationGeneration(activeView.editor);
+				else new Notice('Please open a file first.');
 			},
 		});
 	}
@@ -142,6 +166,14 @@ export default class MyTranslatorPlugin extends Plugin {
 
 	private sanitizeContextSentence(sentence: string): string {
 		return sentence.replace(/^["'״׳]+|["'״׳]+$/g, '').trim();
+	}
+
+	private formatSourceWord(word: string): string {
+		// Checks if the word starts with a lowercase English letter
+		if (this.settings.capitalizeFirstLetter && /^[a-z]/.test(word)) {
+			return word.charAt(0).toUpperCase() + word.slice(1);
+		}
+		return word;
 	}
 
 	async getResolvedModel(): Promise<string> {
@@ -204,6 +236,8 @@ export default class MyTranslatorPlugin extends Plugin {
 		}
 
 		const rawSelection = selection;
+		const displaySelection = this.formatSourceWord(rawSelection);
+
 		if (this.settings.hidePunctuation) {
 			selection = this.removePunctuation(selection);
 		}
@@ -213,10 +247,17 @@ export default class MyTranslatorPlugin extends Plugin {
 		try {
 			let translatedText = '';
 			let alternatives: string[] = [];
+			let googleDictText = '';
+
 			const wantsAlternatives =
 				this.settings.useOutputBuilder &&
 				this.settings.outputBlocks.some(
 					(b) => b.type === 'alternatives',
+				);
+			const wantsGoogleDict =
+				this.settings.useOutputBuilder &&
+				this.settings.outputBlocks.some(
+					(b) => b.type === 'google-dict',
 				);
 
 			if (this.settings.useOfficialApi) {
@@ -256,7 +297,7 @@ export default class MyTranslatorPlugin extends Plugin {
 				const tl = this.settings.targetLanguage;
 				const query = encodeURIComponent(selection);
 
-				const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&dt=bd&dj=1&q=${query}`;
+				const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&dt=bd&dt=md&dj=1&q=${query}`;
 
 				const response = await requestUrl({ url: url, method: 'GET' });
 				if (response.status === 200 && response.json) {
@@ -282,6 +323,19 @@ export default class MyTranslatorPlugin extends Plugin {
 								translatedText.toLowerCase(),
 						);
 					}
+
+					if (
+						wantsGoogleDict &&
+						data.definitions &&
+						data.definitions.length > 0
+					) {
+						const defs = data.definitions.flatMap((d) =>
+							(d.entry || []).map((e) => e.gloss).filter(Boolean),
+						);
+						if (defs.length > 0) {
+							googleDictText = defs.slice(0, 2).join('; '); // Keep it relatively short
+						}
+					}
 				} else {
 					throw new Error('Unofficial API connection failed.');
 				}
@@ -299,22 +353,34 @@ export default class MyTranslatorPlugin extends Plugin {
 				alternatives = [...new Set(alternatives)];
 			}
 
-			// Standard inline mode
 			if (!this.settings.useOutputBuilder) {
 				editor.replaceSelection(
-					`${rawSelection}${this.settings.inlineSeparator}${translatedText}`,
+					`${displaySelection}${this.settings.inlineSeparator}${translatedText}`,
 				);
 				new Notice('Translation successfully completed.');
 				return;
 			}
 
-			// Output Builder mode: Fetch context only if the context block exists
 			let contextText = '';
 			if (this.settings.outputBlocks.some((b) => b.type === 'context')) {
 				const contextSentence =
 					await this.fetchGeminiContext(rawSelection);
 				if (contextSentence) {
 					contextText = this.sanitizeContextSentence(contextSentence);
+				}
+			}
+
+			let geminiExplanationText = '';
+			if (
+				this.settings.outputBlocks.some(
+					(b) => b.type === 'gemini-explanation',
+				)
+			) {
+				const explanation =
+					await this.fetchGeminiExplanation(rawSelection);
+				if (explanation) {
+					// Stripping punctuation from the Gemini Explanation per request
+					geminiExplanationText = this.removePunctuation(explanation);
 				}
 			}
 
@@ -335,6 +401,14 @@ export default class MyTranslatorPlugin extends Plugin {
 					if (contextText) {
 						finalOutputLines.push(`"${contextText}"`);
 					}
+				} else if (block.type === 'gemini-explanation') {
+					if (geminiExplanationText) {
+						finalOutputLines.push(geminiExplanationText);
+					}
+				} else if (block.type === 'google-dict') {
+					if (googleDictText) {
+						finalOutputLines.push(`Dictionary: ${googleDictText}`);
+					}
 				} else if (block.type === 'custom') {
 					if (block.text && block.text.trim().length > 0) {
 						finalOutputLines.push(block.text);
@@ -347,9 +421,11 @@ export default class MyTranslatorPlugin extends Plugin {
 				.join('\n');
 
 			if (finalBlocksText) {
-				editor.replaceSelection(`${rawSelection}\n${finalBlocksText}`);
+				editor.replaceSelection(
+					`${displaySelection}\n${finalBlocksText}`,
+				);
 			} else {
-				editor.replaceSelection(rawSelection);
+				editor.replaceSelection(displaySelection);
 			}
 
 			new Notice('Translation successfully completed.');
@@ -375,8 +451,27 @@ export default class MyTranslatorPlugin extends Plugin {
 
 		if (contextSentence) {
 			const cleanSentence = this.sanitizeContextSentence(contextSentence);
-			editor.replaceSelection(`${selection}\n"${cleanSentence}"`);
+			const displaySelection = this.formatSourceWord(selection);
+			editor.replaceSelection(`${displaySelection}\n"${cleanSentence}"`);
 			new Notice('Context generated successfully.');
+		}
+	}
+
+	async processExplanationGeneration(editor: Editor) {
+		const selection = editor.getSelection().trim();
+		if (!selection) {
+			new Notice('Select a word for explanation.');
+			return;
+		}
+
+		new Notice('Requesting explanation from AI...');
+		let explanation = await this.fetchGeminiExplanation(selection);
+
+		if (explanation) {
+			explanation = this.removePunctuation(explanation);
+			const displaySelection = this.formatSourceWord(selection);
+			editor.replaceSelection(`${displaySelection}\n${explanation}`);
+			new Notice('Explanation generated successfully.');
 		}
 	}
 
@@ -417,6 +512,46 @@ export default class MyTranslatorPlugin extends Plugin {
 		} catch (error: unknown) {
 			console.error('Gemini API Error:', error);
 			new Notice('Gemini API Error: Check key or restrictions.');
+			return null;
+		}
+	}
+
+	async fetchGeminiExplanation(phrase: string): Promise<string | null> {
+		const apiKey = this.cleanApiKey(this.settings.geminiApiKey);
+		if (!apiKey) {
+			new Notice('Gemini API key is missing.');
+			return null;
+		}
+
+		try {
+			const model = await this.getResolvedModel();
+			const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+			// Ultra-sharp, concise prompt
+			const prompt = `Provide an ultra-concise, sharp dictionary definition for the term: "${phrase}". Maximum 10 to 15 words. Keep it direct, precise, and strictly informational. No introductory words, no conversational fluff. The explanation MUST be written entirely in the language corresponding to the ISO code "${this.settings.targetLanguage}". Return ONLY the definition text.`;
+
+			const response = await requestUrl({
+				url: url,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					contents: [{ parts: [{ text: prompt }] }],
+					generationConfig: {
+						temperature: 0.1,
+						maxOutputTokens: 60,
+					},
+				}),
+			});
+
+			if (response.status === 200 && response.json) {
+				const json = response.json as GeminiGenerateResponse;
+				const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+				if (text) return text.trim();
+			}
+			return null;
+		} catch (error: unknown) {
+			console.error('Gemini Explanation Error:', error);
+			new Notice('Gemini API Error.');
 			return null;
 		}
 	}

@@ -8,23 +8,54 @@ export const LANGUAGES: Record<string, string> = {
 	es: 'Spanish',
 	fr: 'French',
 	de: 'German',
+	it: 'Italian',
+	pt: 'Portuguese',
 	ru: 'Russian',
 	ar: 'Arabic',
 	'zh-CN': 'Chinese (Simplified)',
+	'zh-TW': 'Chinese (Traditional)',
 	ja: 'Japanese',
-	it: 'Italian',
-	pt: 'Portuguese',
-	nl: 'Dutch',
 	ko: 'Korean',
+	nl: 'Dutch',
 	tr: 'Turkish',
 	pl: 'Polish',
-	hi: 'Hindi',
 	sv: 'Swedish',
 	fi: 'Finnish',
+	da: 'Danish',
+	no: 'Norwegian',
 	el: 'Greek',
+	hi: 'Hindi',
+	th: 'Thai',
+	vi: 'Vietnamese',
+	id: 'Indonesian',
+	ms: 'Malay',
+	cs: 'Czech',
+	hu: 'Hungarian',
+	ro: 'Romanian',
+	uk: 'Ukrainian',
+	bg: 'Bulgarian',
+	hr: 'Croatian',
+	sk: 'Slovak',
+	sr: 'Serbian',
+	ta: 'Tamil',
+	te: 'Telugu',
+	bn: 'Bengali',
+	ur: 'Urdu',
+	fa: 'Persian',
+	sw: 'Swahili',
+	am: 'Amharic',
+	af: 'Afrikaans',
+	is: 'Icelandic',
+	ga: 'Irish',
 };
 
-export type BlockType = 'translation' | 'context' | 'alternatives' | 'custom';
+export type BlockType =
+	| 'translation'
+	| 'context'
+	| 'alternatives'
+	| 'custom'
+	| 'gemini-explanation'
+	| 'google-dict';
 
 export interface TemplateBlock {
 	id: string;
@@ -38,6 +69,7 @@ export interface TranslatorPluginSettings {
 	sourceLanguage: string;
 	targetLanguage: string;
 	hidePunctuation: boolean;
+	capitalizeFirstLetter: boolean;
 	alternativesCount: number;
 	geminiApiKey: string;
 	useOutputBuilder: boolean;
@@ -51,6 +83,7 @@ export const DEFAULT_SETTINGS: TranslatorPluginSettings = {
 	sourceLanguage: 'auto',
 	targetLanguage: 'he',
 	hidePunctuation: false,
+	capitalizeFirstLetter: false,
 	alternativesCount: 3,
 	geminiApiKey: '',
 	useOutputBuilder: false,
@@ -183,8 +216,24 @@ export class TranslatorSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName('Formatting & UI Output').setHeading();
 
 		new Setting(containerEl)
+			.setName('Capitalize English Source Word')
+			.setDesc(
+				'Automatically convert the first letter of the selected English word to uppercase if it is lowercase.',
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.capitalizeFirstLetter)
+					.onChange(async (value) => {
+						this.plugin.settings.capitalizeFirstLetter = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
 			.setName('Hide Punctuation')
-			.setDesc('Strips punctuation from the output and alternatives.')
+			.setDesc(
+				'Strips punctuation from the output and alternatives (Note: AI Explanation always strips punctuation).',
+			)
 			.addToggle((toggle) =>
 				toggle
 					.setValue(this.plugin.settings.hidePunctuation)
@@ -195,13 +244,13 @@ export class TranslatorSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName('Gemini AI Context Sentence')
+			.setName('Gemini AI Configuration')
 			.setHeading();
 
 		new Setting(containerEl)
 			.setName('Gemini AI Studio API Key')
 			.setDesc(
-				'API key from Google AI Studio. Required for Context blocks and Context command.',
+				'API key from Google AI Studio. Required for Context blocks, Explanations, and Context commands.',
 			)
 			.addText((text) =>
 				text
@@ -393,6 +442,8 @@ export class TranslatorSettingTab extends PluginSettingTab {
 				translation: '🔤 Translation Block',
 				context: '🧠 Context Sentence Block',
 				alternatives: '🔄 Alternatives Block',
+				'gemini-explanation': '✨ Gemini Explanation Block',
+				'google-dict': '📖 Google Dict Explanation',
 				custom: '✏️ Custom Text / Line',
 			};
 
@@ -444,6 +495,14 @@ export class TranslatorSettingTab extends PluginSettingTab {
 		selectEl.createEl('option', {
 			value: 'alternatives',
 			text: 'Alternatives Block',
+		});
+		selectEl.createEl('option', {
+			value: 'gemini-explanation',
+			text: 'Gemini Explanation Block',
+		});
+		selectEl.createEl('option', {
+			value: 'google-dict',
+			text: 'Google Dict Explanation',
 		});
 		selectEl.createEl('option', {
 			value: 'custom',

@@ -1,7 +1,7 @@
 {
 	"id": "mobiletranslate",
 	"name": "Mobile-Translate",
-	"version": "2.0.2",
+	"version": "2.0.3",
 	"minAppVersion": "1.4.0",
 	"description": "Select the text and click button for translation , uses Google Translate for consistency.",
 	"author": "KfirG",
