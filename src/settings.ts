@@ -55,12 +55,18 @@ export type BlockType =
 	| 'alternatives'
 	| 'custom'
 	| 'gemini-explanation'
+	| 'gemini-synonyms'
 	| 'google-dict';
 
 export interface TemplateBlock {
 	id: string;
 	type: BlockType;
 	text?: string;
+}
+
+export interface Preset {
+	name: string;
+	blocks: TemplateBlock[];
 }
 
 export interface TranslatorPluginSettings {
@@ -75,6 +81,7 @@ export interface TranslatorPluginSettings {
 	useOutputBuilder: boolean;
 	inlineSeparator: string;
 	outputBlocks: TemplateBlock[];
+	presets: Preset[];
 }
 
 export const DEFAULT_SETTINGS: TranslatorPluginSettings = {
@@ -92,6 +99,7 @@ export const DEFAULT_SETTINGS: TranslatorPluginSettings = {
 		{ id: '1', type: 'translation' },
 		{ id: '2', type: 'alternatives' },
 	],
+	presets: [],
 };
 
 export class TranslatorSettingTab extends PluginSettingTab {
@@ -349,7 +357,98 @@ export class TranslatorSettingTab extends PluginSettingTab {
 						}),
 				);
 
+			this.renderPresetsUI(containerEl);
 			this.renderOutputBlockBuilder(containerEl);
+		}
+	}
+
+	private renderPresetsUI(containerEl: HTMLElement) {
+		new Setting(containerEl).setName('Outliner Presets').setHeading();
+
+		const presetContainer = containerEl.createDiv();
+		presetContainer.setCssStyles({
+			display: 'flex',
+			gap: '10px',
+			marginBottom: '20px',
+			alignItems: 'center',
+		});
+
+		const presetInput = presetContainer.createEl('input', {
+			type: 'text',
+			placeholder: 'Preset name...',
+		});
+		const savePresetBtn = presetContainer.createEl('button', {
+			text: '💾 Save Current as Preset',
+		});
+
+		savePresetBtn.onclick = async () => {
+			const name = presetInput.value.trim();
+			if (!name) {
+				new Notice('Please enter a preset name.');
+				return;
+			}
+			this.plugin.settings.presets.push({
+				name,
+				// Deep copy to detach references
+				blocks: JSON.parse(
+					JSON.stringify(this.plugin.settings.outputBlocks),
+				),
+			});
+			await this.plugin.saveSettings();
+			new Notice(`Preset "${name}" saved!`);
+			this.display();
+		};
+
+		if (this.plugin.settings.presets.length > 0) {
+			const presetList = containerEl.createDiv();
+			presetList.setCssStyles({
+				display: 'flex',
+				flexDirection: 'column',
+				gap: '10px',
+				marginBottom: '20px',
+				padding: '10px',
+				backgroundColor: 'var(--background-secondary)',
+				borderRadius: '8px',
+			});
+
+			for (let i = 0; i < this.plugin.settings.presets.length; i++) {
+				const preset = this.plugin.settings.presets[i];
+				if (!preset) continue; // <-- FIX FOR TypeScript ERROR ts(18048)
+
+				const row = presetList.createDiv();
+				row.setCssStyles({
+					display: 'flex',
+					gap: '10px',
+					alignItems: 'center',
+				});
+
+				row.createSpan({ text: preset.name }).setCssStyles({
+					flexGrow: '1',
+					fontWeight: 'bold',
+				});
+
+				const loadBtn = row.createEl('button', { text: 'Load' });
+				loadBtn.onclick = async () => {
+					this.plugin.settings.outputBlocks = JSON.parse(
+						JSON.stringify(preset.blocks),
+					);
+					await this.plugin.saveSettings();
+					new Notice(`Loaded preset: ${preset.name}`);
+					this.display();
+				};
+
+				const delBtn = row.createEl('button', { text: '🗑️' });
+				delBtn.setCssStyles({
+					boxShadow: 'none',
+					background: 'transparent',
+					cursor: 'pointer',
+				});
+				delBtn.onclick = async () => {
+					this.plugin.settings.presets.splice(i, 1);
+					await this.plugin.saveSettings();
+					this.display();
+				};
+			}
 		}
 	}
 
@@ -443,6 +542,7 @@ export class TranslatorSettingTab extends PluginSettingTab {
 				context: '🧠 Context Sentence Block',
 				alternatives: '🔄 Alternatives Block',
 				'gemini-explanation': '✨ Gemini Explanation Block',
+				'gemini-synonyms': '🔍 High-Word Translator (Gemini)',
 				'google-dict': '📖 Google Dict Explanation',
 				custom: '✏️ Custom Text / Line',
 			};
@@ -499,6 +599,10 @@ export class TranslatorSettingTab extends PluginSettingTab {
 		selectEl.createEl('option', {
 			value: 'gemini-explanation',
 			text: 'Gemini Explanation Block',
+		});
+		selectEl.createEl('option', {
+			value: 'gemini-synonyms',
+			text: 'High-Word Translation (Gemini)',
 		});
 		selectEl.createEl('option', {
 			value: 'google-dict',

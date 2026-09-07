@@ -110,7 +110,7 @@ export default class MyTranslatorPlugin extends Plugin {
 			},
 		});
 
-		// 3. NEW: AI Explanation Only Button & Command
+		// 3. AI Explanation Only Button & Command
 		this.addRibbonIcon('book', 'Generate AI Explanation', () => {
 			const activeView =
 				this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -144,6 +144,9 @@ export default class MyTranslatorPlugin extends Plugin {
 
 		if (!this.settings.outputBlocks) {
 			this.settings.outputBlocks = DEFAULT_SETTINGS.outputBlocks;
+		}
+		if (!this.settings.presets) {
+			this.settings.presets = [];
 		}
 	}
 
@@ -384,6 +387,18 @@ export default class MyTranslatorPlugin extends Plugin {
 				}
 			}
 
+			let geminiSynonymsText = '';
+			if (
+				this.settings.outputBlocks.some(
+					(b) => b.type === 'gemini-synonyms',
+				)
+			) {
+				const synonyms = await this.fetchGeminiSynonyms(rawSelection);
+				if (synonyms) {
+					geminiSynonymsText = this.removePunctuation(synonyms);
+				}
+			}
+
 			const finalOutputLines: string[] = [];
 
 			for (const block of this.settings.outputBlocks) {
@@ -404,6 +419,10 @@ export default class MyTranslatorPlugin extends Plugin {
 				} else if (block.type === 'gemini-explanation') {
 					if (geminiExplanationText) {
 						finalOutputLines.push(geminiExplanationText);
+					}
+				} else if (block.type === 'gemini-synonyms') {
+					if (geminiSynonymsText) {
+						finalOutputLines.push(geminiSynonymsText);
 					}
 				} else if (block.type === 'google-dict') {
 					if (googleDictText) {
@@ -551,6 +570,46 @@ export default class MyTranslatorPlugin extends Plugin {
 			return null;
 		} catch (error: unknown) {
 			console.error('Gemini Explanation Error:', error);
+			new Notice('Gemini API Error.');
+			return null;
+		}
+	}
+
+	async fetchGeminiSynonyms(phrase: string): Promise<string | null> {
+		const apiKey = this.cleanApiKey(this.settings.geminiApiKey);
+		if (!apiKey) {
+			new Notice('Gemini API key is missing.');
+			return null;
+		}
+
+		try {
+			const model = await this.getResolvedModel();
+			const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+			// Prompt that forces synonyms/simplification strictly in the source language
+			const prompt = `You are a vocabulary simplifier. Take the word/phrase: "${phrase}". Provide a simpler, everyday equivalent, translation to common words, or a short list of simple synonyms. The response MUST be written entirely in the exact same language as the word "${phrase}". Do not include the original word, only the simpler equivalents. Keep it very short, maximum 10 words. Return ONLY the text, no conversational fluff.`;
+
+			const response = await requestUrl({
+				url: url,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					contents: [{ parts: [{ text: prompt }] }],
+					generationConfig: {
+						temperature: 0.1,
+						maxOutputTokens: 50,
+					},
+				}),
+			});
+
+			if (response.status === 200 && response.json) {
+				const json = response.json as GeminiGenerateResponse;
+				const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+				if (text) return text.trim();
+			}
+			return null;
+		} catch (error: unknown) {
+			console.error('Gemini Synonyms Error:', error);
 			new Notice('Gemini API Error.');
 			return null;
 		}
