@@ -392,7 +392,7 @@ export class TranslatorSettingTab extends PluginSettingTab {
 				// Deep copy to detach references
 				blocks: JSON.parse(
 					JSON.stringify(this.plugin.settings.outputBlocks),
-				),
+				) as TemplateBlock[],
 			});
 			await this.plugin.saveSettings();
 			new Notice(`Preset "${name}" saved!`);
@@ -413,7 +413,7 @@ export class TranslatorSettingTab extends PluginSettingTab {
 
 			for (let i = 0; i < this.plugin.settings.presets.length; i++) {
 				const preset = this.plugin.settings.presets[i];
-				if (!preset) continue; // <-- FIX FOR TypeScript ERROR ts(18048)
+				if (!preset) continue;
 
 				const row = presetList.createDiv();
 				row.setCssStyles({
@@ -431,7 +431,7 @@ export class TranslatorSettingTab extends PluginSettingTab {
 				loadBtn.onclick = async () => {
 					this.plugin.settings.outputBlocks = JSON.parse(
 						JSON.stringify(preset.blocks),
-					);
+					) as TemplateBlock[];
 					await this.plugin.saveSettings();
 					new Notice(`Loaded preset: ${preset.name}`);
 					this.display();
