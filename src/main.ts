@@ -131,6 +131,62 @@ export default class MyTranslatorPlugin extends Plugin {
 				else new Notice('Please open a file first.');
 			},
 		});
+
+		// 4. Scroll to Top Button & Command
+		this.addRibbonIcon('arrow-up', 'Scroll to Top', () => {
+			const activeView =
+				this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (activeView) {
+				activeView.editor.setCursor(0, 0);
+			} else {
+				new Notice('Please open a file first.');
+			}
+		});
+
+		this.addCommand({
+			id: 'scroll-to-top',
+			name: 'Scroll to top',
+			icon: 'arrow-up',
+			callback: () => {
+				const activeView =
+					this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (activeView) {
+					activeView.editor.setCursor(0, 0);
+				} else {
+					new Notice('Please open a file first.');
+				}
+			},
+		});
+
+		// 5. Scroll to Bottom Button & Command
+		this.addRibbonIcon('arrow-down', 'Scroll to Bottom', () => {
+			const activeView =
+				this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (activeView) {
+				const editor = activeView.editor;
+				const lastLine = editor.lastLine();
+				editor.setCursor(lastLine, editor.getLine(lastLine).length);
+			} else {
+				new Notice('Please open a file first.');
+			}
+		});
+
+		this.addCommand({
+			id: 'scroll-to-bottom',
+			name: 'Scroll to bottom',
+			icon: 'arrow-down',
+			callback: () => {
+				const activeView =
+					this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (activeView) {
+					const editor = activeView.editor;
+					const lastLine = editor.lastLine();
+					editor.setCursor(lastLine, editor.getLine(lastLine).length);
+				} else {
+					new Notice('Please open a file first.');
+				}
+			},
+		});
 	}
 
 	onunload() {
